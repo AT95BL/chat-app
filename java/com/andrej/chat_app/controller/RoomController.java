@@ -11,6 +11,7 @@ import com.andrej.chat_app.model.RoomMember;
 import com.andrej.chat_app.repository.MessageRepository;
 import com.andrej.chat_app.repository.RoomMemberRepository;
 import com.andrej.chat_app.repository.RoomRepository;
+import com.andrej.chat_app.service.MessageCacheService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -28,6 +29,7 @@ public class RoomController {
     private final RoomRepository roomRepository;
     private final RoomMemberRepository roomMemberRepository;
     private final MessageRepository messageRepository;
+    private final MessageCacheService messageCacheService;
 
     @GetMapping
     public ResponseEntity<List<RoomDto>> getAllRooms() {
@@ -81,11 +83,22 @@ public class RoomController {
 
     @GetMapping("/{id}/messages")
     public ResponseEntity<List<MessageDto>> getMessages(@PathVariable Long id) {
+        // try Redis cache first
+        List<MessageDto> cached = messageCacheService.getMessages(id);
+        if (!cached.isEmpty()) {
+            return ResponseEntity.ok(cached);
+        }
+
+        // fall back to PostgreSQL and populate cache
         List<MessageDto> messages = messageRepository
                 .findTop50ByRoomIdOrderBySentAtAsc(id)
                 .stream()
                 .map(this::toDto)
                 .toList();
+
+        // populate cache for next time
+        messages.forEach(messageCacheService::addMessage);
+
         return ResponseEntity.ok(messages);
     }
 

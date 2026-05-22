@@ -8,6 +8,7 @@ import com.andrej.chat_app.model.Message;
 import com.andrej.chat_app.model.PrivateMessage;
 import com.andrej.chat_app.repository.MessageRepository;
 import com.andrej.chat_app.repository.PrivateMessageRepository;
+import com.andrej.chat_app.service.MessageCacheService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -27,6 +28,7 @@ public class ChatController {
     private final SimpMessagingTemplate messagingTemplate;
     private final MessageRepository messageRepository;
     private final PrivateMessageRepository privateMessageRepository;
+    private final MessageCacheService messageCacheService;
 
     // handles messages sent to /app/chat.send
     @MessageMapping("/chat.send")
@@ -40,15 +42,16 @@ public class ChatController {
         message.setType(Message.MessageType.CHAT);
 
         Message saved = messageRepository.save(message);
-
         MessageDto dto = toDto(saved);
 
-        // broadcast to everyone subscribed to /topic/room.{roomId}
-        messagingTemplate.convertAndSend(
-                "/topic/room." + request.getRoomId(), dto);
+        // cache in Redis
+        messageCacheService.addMessage(dto);
 
+        // broadcast via WebSocket
+        messagingTemplate.convertAndSend("/topic/room." + request.getRoomId(), dto);
         log.info("Message from {} in room {}", principal.getName(), request.getRoomId());
     }
+
 
     // handles messages sent to /app/chat.private
     @MessageMapping("/chat.private")
