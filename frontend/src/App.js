@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
 import axios from 'axios';
 import Login from './components/Login';
 import Sidebar from './components/Sidebar';
 import ChatRoom from './components/ChatRoom';
-import { API, COLORS } from './constants';
+import PrivateChat from './components/PrivateChat';
+import { API, WS_URL, COLORS } from './constants';
 
 function OAuth2Callback({ onLogin }) {
   useEffect(() => {
@@ -29,14 +32,22 @@ function OAuth2Callback({ onLogin }) {
 function App() {
   const [user, setUser] = useState(() => {
     const token = localStorage.getItem('token');
-    return token ? { token, username: localStorage.getItem('username'), role: localStorage.getItem('role') } : null;
+    return token ? {
+      token,
+      username: localStorage.getItem('username'),
+      role: localStorage.getItem('role')
+    } : null;
   });
+
   const [rooms, setRooms] = useState([]);
   const [currentRoom, setCurrentRoom] = useState(null);
-
-  const isOAuth2Callback = window.location.pathname === '/oauth2/callback';
+  const [currentPrivateUser, setCurrentPrivateUser] = useState(null);
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  const presenceClientRef = React.useRef(null);
 
   const token = user?.token;
+  const username = user?.username;
+  const isOAuth2Callback = window.location.pathname === '/oauth2/callback';
 
   const fetchRooms = async () => {
     if (!token) return;
@@ -50,21 +61,57 @@ function App() {
     }
   };
 
+  // presence WebSocket — separate connection just for online tracking
+  useEffect(() => {
+    if (!user) return;
+
+    const client = new Client({
+      webSocketFactory: () => new SockJS(WS_URL),
+      connectHeaders: { Authorization: `Bearer ${token}` },
+      onConnect: () => {
+        client.subscribe('/topic/presence', msg => {
+          const users = JSON.parse(msg.body);
+          setOnlineUsers(Array.isArray(users) ? users : Object.values(users));
+        });
+      },
+    });
+
+    client.activate();
+    presenceClientRef.current = client;
+
+    return () => {
+      if (presenceClientRef.current) presenceClientRef.current.deactivate();
+    };
+  }, [user]);
+
   useEffect(() => {
     if (user) fetchRooms();
   }, [user]);
 
-  const handleLogin = (data) => { setUser(data); };
-  const handleLogout = () => { localStorage.clear(); setUser(null); setCurrentRoom(null); setRooms([]); };
+  const handleLogin = (data) => setUser(data);
+
+  const handleLogout = () => {
+    if (presenceClientRef.current) presenceClientRef.current.deactivate();
+    localStorage.clear();
+    setUser(null);
+    setCurrentRoom(null);
+    setCurrentPrivateUser(null);
+    setRooms([]);
+  };
 
   const handleSelectRoom = async (room) => {
-    // join the room if not already a member
+    setCurrentPrivateUser(null);
     try {
       await axios.post(`${API}/rooms/${room.id}/join`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
     } catch {}
     setCurrentRoom(room);
+  };
+
+  const handleSelectUser = (selectedUsername) => {
+    setCurrentRoom(null);
+    setCurrentPrivateUser(selectedUsername);
   };
 
   const handleCreateRoom = async (name, description) => {
@@ -74,8 +121,9 @@ function App() {
       });
       setRooms(prev => [...prev, res.data]);
       setCurrentRoom(res.data);
+      setCurrentPrivateUser(null);
     } catch (err) {
-      console.error('Failed to create room', err);
+      alert(err.response?.data?.message || 'Failed to create room');
     }
   };
 
@@ -101,29 +149,43 @@ function App() {
       <Sidebar
         rooms={rooms}
         currentRoom={currentRoom}
+        currentUser={currentPrivateUser}
         onSelectRoom={handleSelectRoom}
         onCreateRoom={handleCreateRoom}
-        username={user.username}
+        onSelectUser={handleSelectUser}
+        username={username}
         onLogout={handleLogout}
+        onlineUsers={onlineUsers}
       />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {currentRoom ? (
+        {currentRoom && (
           <ChatRoom
             room={currentRoom}
-            username={user.username}
+            username={username}
             token={token}
             onLeave={handleLeaveRoom}
           />
-        ) : (
+        )}
+
+        {currentPrivateUser && (
+          <PrivateChat
+            otherUser={currentPrivateUser}
+            username={username}
+            token={token}
+            onClose={() => setCurrentPrivateUser(null)}
+          />
+        )}
+
+        {!currentRoom && !currentPrivateUser && (
           <div style={{
             flex: 1, display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', color: COLORS.muted
           }}>
             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💬</div>
-            <h2 style={{ color: COLORS.text, margin: 0 }}>Welcome, {user.username}!</h2>
+            <h2 style={{ color: COLORS.text, margin: 0 }}>Welcome, {username}!</h2>
             <p style={{ marginTop: '8px', fontSize: '14px' }}>
-              Select a room from the sidebar or create a new one
+              Select a room or start a direct message
             </p>
           </div>
         )}

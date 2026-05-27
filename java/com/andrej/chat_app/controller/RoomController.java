@@ -12,6 +12,7 @@ import com.andrej.chat_app.repository.MessageRepository;
 import com.andrej.chat_app.repository.RoomMemberRepository;
 import com.andrej.chat_app.repository.RoomRepository;
 import com.andrej.chat_app.service.MessageCacheService;
+import com.andrej.chat_app.service.OnlinePresenceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/rooms")
@@ -30,6 +32,7 @@ public class RoomController {
     private final RoomMemberRepository roomMemberRepository;
     private final MessageRepository messageRepository;
     private final MessageCacheService messageCacheService;
+    private final OnlinePresenceService onlinePresenceService;
 
     @GetMapping
     public ResponseEntity<List<RoomDto>> getAllRooms() {
@@ -62,6 +65,12 @@ public class RoomController {
         return ResponseEntity.ok(new RoomDto(
                 saved.getId(), saved.getName(), saved.getDescription(),
                 saved.getCreatedBy(), saved.getCreatedAt(), 1));
+    }
+
+    @GetMapping("/{id}/online")
+    public ResponseEntity<Set<String>> getOnlineUsers(
+            @PathVariable Long id) {
+        return ResponseEntity.ok(onlinePresenceService.getOnlineUsersInRoom(id));
     }
 
     @PostMapping("/{id}/join")

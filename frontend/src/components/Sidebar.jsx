@@ -1,11 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { API, COLORS } from '../constants';
 
-function Sidebar({ rooms, currentRoom, onSelectRoom, onCreateRoom, username, onLogout }) {
+function Sidebar({ rooms, currentRoom, onSelectRoom, onCreateRoom,
+                   username, onLogout, onSelectUser, currentUser,
+                   onlineUsers }) {
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDesc, setNewRoomDesc] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [users, setUsers] = useState([]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    axios.get(`${API}/users`, {
+      headers: { Authorization: `Bearer ${token}` }
+    }).then(res => setUsers(res.data)).catch(() => {});
+  }, []);
 
   const handleCreate = async () => {
     if (!newRoomName.trim()) return;
@@ -21,7 +31,7 @@ function Sidebar({ rooms, currentRoom, onSelectRoom, onCreateRoom, username, onL
       flexDirection: 'column', borderRight: `1px solid ${COLORS.border}`,
       fontFamily: '"Inter", "Segoe UI", sans-serif'
     }}>
-      {/* App header */}
+      {/* Header */}
       <div style={{
         padding: '16px', borderBottom: `1px solid ${COLORS.border}`,
         display: 'flex', alignItems: 'center', gap: '8px'
@@ -30,8 +40,9 @@ function Sidebar({ rooms, currentRoom, onSelectRoom, onCreateRoom, username, onL
         <span style={{ color: COLORS.text, fontWeight: '700', fontSize: '15px' }}>ChatApp</span>
       </div>
 
-      {/* Rooms list */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+
+        {/* Rooms section */}
         <div style={{
           padding: '8px 16px 4px', color: COLORS.muted,
           fontSize: '11px', fontWeight: '600', letterSpacing: '0.8px',
@@ -46,9 +57,7 @@ function Sidebar({ rooms, currentRoom, onSelectRoom, onCreateRoom, username, onL
 
         {showCreate && (
           <div style={{ padding: '8px 12px', borderBottom: `1px solid ${COLORS.border}` }}>
-            <input
-              placeholder="Room name"
-              value={newRoomName}
+            <input placeholder="Room name" value={newRoomName}
               onChange={e => setNewRoomName(e.target.value)}
               style={{
                 width: '100%', padding: '6px 8px', borderRadius: '4px',
@@ -57,9 +66,7 @@ function Sidebar({ rooms, currentRoom, onSelectRoom, onCreateRoom, username, onL
                 marginBottom: '6px', outline: 'none'
               }}
             />
-            <input
-              placeholder="Description (optional)"
-              value={newRoomDesc}
+            <input placeholder="Description (optional)" value={newRoomDesc}
               onChange={e => setNewRoomDesc(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleCreate()}
               style={{
@@ -78,14 +85,14 @@ function Sidebar({ rooms, currentRoom, onSelectRoom, onCreateRoom, username, onL
         )}
 
         {rooms.map(room => (
-          <div
-            key={room.id}
-            onClick={() => onSelectRoom(room)}
+          <div key={room.id} onClick={() => onSelectRoom(room)}
             style={{
               padding: '6px 16px', cursor: 'pointer', borderRadius: '4px',
               margin: '1px 8px',
-              background: currentRoom?.id === room.id ? 'rgba(88,101,242,0.2)' : 'transparent',
-              color: currentRoom?.id === room.id ? COLORS.text : COLORS.muted,
+              background: currentRoom?.id === room.id && !currentUser
+                ? 'rgba(88,101,242,0.2)' : 'transparent',
+              color: currentRoom?.id === room.id && !currentUser
+                ? COLORS.text : COLORS.muted,
               fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px'
             }}
           >
@@ -96,6 +103,37 @@ function Sidebar({ rooms, currentRoom, onSelectRoom, onCreateRoom, username, onL
             </span>
           </div>
         ))}
+
+        {/* Direct Messages section */}
+        <div style={{
+          padding: '16px 16px 4px', color: COLORS.muted,
+          fontSize: '11px', fontWeight: '600', letterSpacing: '0.8px'
+        }}>
+          DIRECT MESSAGES
+        </div>
+
+        {users.map(user => {
+          const isOnline = onlineUsers?.includes(user);
+          const isSelected = currentUser === user;
+          return (
+            <div key={user} onClick={() => onSelectUser(user)}
+              style={{
+                padding: '6px 16px', cursor: 'pointer', borderRadius: '4px',
+                margin: '1px 8px',
+                background: isSelected ? 'rgba(88,101,242,0.2)' : 'transparent',
+                color: isSelected ? COLORS.text : COLORS.muted,
+                fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px'
+              }}
+            >
+              <div style={{
+                width: '8px', height: '8px', borderRadius: '50%',
+                background: isOnline ? COLORS.green : COLORS.muted,
+                flexShrink: 0
+              }} />
+              <span>{user}</span>
+            </div>
+          );
+        })}
       </div>
 
       {/* User footer */}
@@ -110,9 +148,12 @@ function Sidebar({ rooms, currentRoom, onSelectRoom, onCreateRoom, username, onL
         }}>
           {username?.[0]?.toUpperCase()}
         </div>
-        <span style={{ color: COLORS.text, fontSize: '13px', fontWeight: '500', flex: 1 }}>
-          {username}
-        </span>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: COLORS.text, fontSize: '13px', fontWeight: '500' }}>
+            {username}
+          </div>
+          <div style={{ color: COLORS.green, fontSize: '11px' }}>● Online</div>
+        </div>
         <button onClick={onLogout} style={{
           background: 'none', border: 'none', color: COLORS.muted,
           cursor: 'pointer', fontSize: '18px', padding: '2px'

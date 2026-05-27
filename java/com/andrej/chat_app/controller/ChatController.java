@@ -9,6 +9,7 @@ import com.andrej.chat_app.model.PrivateMessage;
 import com.andrej.chat_app.repository.MessageRepository;
 import com.andrej.chat_app.repository.PrivateMessageRepository;
 import com.andrej.chat_app.service.MessageCacheService;
+import com.andrej.chat_app.service.OnlinePresenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -29,6 +30,7 @@ public class ChatController {
     private final MessageRepository messageRepository;
     private final PrivateMessageRepository privateMessageRepository;
     private final MessageCacheService messageCacheService;
+    private final OnlinePresenceService onlinePresenceService;
 
     // handles messages sent to /app/chat.send
     @MessageMapping("/chat.send")
@@ -43,6 +45,7 @@ public class ChatController {
 
         Message saved = messageRepository.save(message);
         MessageDto dto = toDto(saved);
+        onlinePresenceService.userJoinedRoom(request.getRoomId(), principal.getName());
 
         // cache in Redis
         messageCacheService.addMessage(dto);
@@ -92,6 +95,7 @@ public class ChatController {
         message.setType(Message.MessageType.JOIN);
 
         Message saved = messageRepository.save(message);
+        onlinePresenceService.userJoinedRoom(request.getRoomId(), principal.getName());
 
         messagingTemplate.convertAndSend(
                 "/topic/room." + request.getRoomId(), toDto(saved));
