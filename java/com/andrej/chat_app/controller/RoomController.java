@@ -13,6 +13,8 @@ import com.andrej.chat_app.repository.RoomMemberRepository;
 import com.andrej.chat_app.repository.RoomRepository;
 import com.andrej.chat_app.service.MessageCacheService;
 import com.andrej.chat_app.service.OnlinePresenceService;
+import com.andrej.chat_app.service.UnreadCountService;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +23,7 @@ import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/rooms")
@@ -33,6 +36,7 @@ public class RoomController {
     private final MessageRepository messageRepository;
     private final MessageCacheService messageCacheService;
     private final OnlinePresenceService onlinePresenceService;
+    private final UnreadCountService unreadCountService;
 
     @GetMapping
     public ResponseEntity<List<RoomDto>> getAllRooms() {
@@ -109,6 +113,17 @@ public class RoomController {
         messages.forEach(messageCacheService::addMessage);
 
         return ResponseEntity.ok(messages);
+    }
+
+    @GetMapping("/unread")
+        public ResponseEntity<Map<Long, Integer>> getUnreadCounts(Principal principal) {
+        return ResponseEntity.ok(unreadCountService.getUnreadCounts(principal.getName()));
+    }
+
+    @PostMapping("/{id}/read")
+        public ResponseEntity<Void> markAsRead(@PathVariable Long id, Principal principal) {
+            unreadCountService.clear(principal.getName(), id);
+            return ResponseEntity.ok().build();
     }
 
     private void joinRoomInternal(Long roomId, String username) {
