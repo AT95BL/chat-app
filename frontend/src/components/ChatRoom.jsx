@@ -11,6 +11,9 @@ function ChatRoom({ room, username, token, onLeave }) {
   const clientRef = useRef(null);
   const bottomRef = useRef(null);
 
+  const [typingUsers, setTypingUsers] = useState([]);
+  const typingTimeoutRef = useRef({});
+
   useEffect(() => {
     // load history
     axios.get(`${API}/rooms/${room.id}/messages`, {
@@ -25,9 +28,20 @@ function ChatRoom({ room, username, token, onLeave }) {
         setConnected(true);
 
         // subscribe to room topic
-        client.subscribe(`/topic/room.${room.id}`, msg => {
-          const message = JSON.parse(msg.body);
-          setMessages(prev => [...prev, message]);
+        client.subscribe(`/topic/room.${room.id}.typing`, msg => {
+          const event = JSON.parse(msg.body);
+          if (event.username === username) return;
+
+          setTypingUsers(prev => {
+            if (!prev.includes(event.username)) return [...prev, event.username];
+            return prev;
+          });
+
+          // clear typing after 2 seconds of no events
+          clearTimeout(typingTimeoutRef.current[event.username]);
+          typingTimeoutRef.current[event.username] = setTimeout(() => {
+            setTypingUsers(prev => prev.filter(u => u !== event.username));
+          }, 2000);
         });
 
         // announce join
@@ -35,6 +49,20 @@ function ChatRoom({ room, username, token, onLeave }) {
           destination: '/app/chat.join',
           body: JSON.stringify({ roomId: room.id, content: '' })
         });
+
+        // subscribe to room messages — ADD THIS, it's missing
+      client.subscribe(`/topic/room.${room.id}`, msg => {
+        const message = JSON.parse(msg.body);
+        setMessages(prev => [...prev, message]);
+      });
+
+      // subscribe to delete events — ADD THIS TOO
+      client.subscribe(`/topic/room.${room.id}.delete`, msg => {
+        const event = JSON.parse(msg.body);
+        setMessages(prev => prev.map(m =>
+          m.id === event.messageId ? { ...m, deleted: true } : m
+        ));
+    });
       },
       onDisconnect: () => setConnected(false),
     });
@@ -124,13 +152,33 @@ function ChatRoom({ room, username, token, onLeave }) {
                   {msg.senderUsername}
                 </span>
               )}
-              <div style={{
-                background: isOwn ? COLORS.accent : COLORS.input,
-                color: COLORS.text, borderRadius: isOwn ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                padding: '8px 14px', maxWidth: '70%', fontSize: '14px', lineHeight: '1.5'
-              }}>
-                {msg.deleted ? <em style={{ color: COLORS.muted }}>Message deleted</em> : msg.content}
+              
+              {/* OVDJE JE UBACIŠ: Novi isječak koda zamjenjuje stari div za oblačić poruke */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{
+                  background: isOwn ? COLORS.accent : COLORS.input,
+                  color: COLORS.text,
+                  borderRadius: isOwn ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                  padding: '8px 14px', maxWidth: '70%', fontSize: '14px', lineHeight: '1.5'
+                }}>
+                  {msg.deleted
+                    ? <em style={{ color: COLORS.muted }}>Message deleted</em>
+                    : msg.content}
+                </div>
+                {isOwn && !msg.deleted && (
+                  <button
+                    onClick={() => clientRef.current?.publish({
+                      destination: '/app/chat.delete',
+                      body: JSON.stringify({ messageId: msg.id, roomId: room.id })
+                    })}
+                    style={{
+                      background: 'none', border: 'none', color: COLORS.muted,
+                      cursor: 'pointer', fontSize: '14px', padding: '2px', opacity: 0.5
+                    }}
+                  >🗑</button>
+                )}
               </div>
+
               <span style={{ color: COLORS.muted, fontSize: '11px', marginTop: '2px', marginLeft: '4px', marginRight: '4px' }}>
                 {formatTime(msg.sentAt)}
               </span>
@@ -139,13 +187,31 @@ function ChatRoom({ room, username, token, onLeave }) {
         })}
         <div ref={bottomRef} />
       </div>
-
+      
+      {typingUsers.length > 0 && (
+            <div style={{
+              padding: '4px 20px', fontSize: '12px', color: COLORS.muted,
+              fontStyle: 'italic'
+            }}>
+              {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing
+              <span style={{ animation: 'pulse 1s infinite' }}>...</span>
+            </div>
+      )}
       {/* Input */}
       <div style={{ padding: '14px 20px', borderTop: `1px solid ${COLORS.border}`, background: COLORS.panel }}>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <input
             value={input}
-            onChange={e => setInput(e.target.value)}
+            // onChange={e => setInput(e.target.value)}
+            onChange={e => {
+              setInput(e.target.value);
+              if (clientRef.current?.connected) {
+                clientRef.current.publish({
+                  destination: '/app/chat.typing',
+                  body: JSON.stringify({ roomId: room.id, content: '' })
+                });
+              }
+            }}
             onKeyDown={e => e.key === 'Enter' && sendMessage()}
             placeholder={`Message #${room.name}`}
             style={{

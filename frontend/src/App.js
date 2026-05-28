@@ -44,6 +44,7 @@ function App() {
   const [currentPrivateUser, setCurrentPrivateUser] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const presenceClientRef = React.useRef(null);
+  const [unreadCounts, setUnreadCounts] = useState({});
 
   const token = user?.token;
   const username = user?.username;
@@ -62,6 +63,7 @@ function App() {
   };
 
   // presence WebSocket — separate connection just for online tracking
+  // presence WebSocket — separate connection just for online tracking and global topics
   useEffect(() => {
     if (!user) return;
 
@@ -69,20 +71,42 @@ function App() {
       webSocketFactory: () => new SockJS(WS_URL),
       connectHeaders: { Authorization: `Bearer ${token}` },
       onConnect: () => {
+       console.log("WebSocket connected successfully!");
+
+        // 1. Unread counts subscription
+        client.subscribe('/user/queue/unread', msg => {
+          const data = JSON.parse(msg.body);
+          setUnreadCounts(prev => ({ ...prev, [data.roomId]: data.count }));
+        });
+
+        // 2. Presence subscription — Sada je na pravom mjestu! ✅
         client.subscribe('/topic/presence', msg => {
           const users = JSON.parse(msg.body);
           setOnlineUsers(Array.isArray(users) ? users : Object.values(users));
         });
       },
+      onStompError: (frame) => {
+        console.error('Broker reported error: ' + frame.headers['message']);
+        console.error('Additional details: ' + frame.body);
+      }
     });
 
     client.activate();
     presenceClientRef.current = client;
 
+    // Fetch initial unread counts preko Axios-a odmah pri logovanju
+    axios.get(`${API}/rooms/unread`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    .then(res => setUnreadCounts(res.data))
+    .catch(err => console.error("Failed to fetch initial unread counts", err));
+
     return () => {
-      if (presenceClientRef.current) presenceClientRef.current.deactivate();
+      if (presenceClientRef.current) {
+        presenceClientRef.current.deactivate();
+      }
     };
-  }, [user]);
+  }, [user, token]); // Dodat token u dependency niz radi bezbjednosti huka
 
   useEffect(() => {
     if (user) fetchRooms();
@@ -100,13 +124,18 @@ function App() {
   };
 
   const handleSelectRoom = async (room) => {
-    setCurrentPrivateUser(null);
+  setCurrentPrivateUser(null);
     try {
       await axios.post(`${API}/rooms/${room.id}/join`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      // mark as read
+      await axios.post(`${API}/rooms/${room.id}/read`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
     } catch {}
-    setCurrentRoom(room);
+      setUnreadCounts(prev => ({ ...prev, [room.id]: 0 }));
+      setCurrentRoom(room);
   };
 
   const handleSelectUser = (selectedUsername) => {
@@ -156,6 +185,7 @@ function App() {
         username={username}
         onLogout={handleLogout}
         onlineUsers={onlineUsers}
+        unreadCounts={unreadCounts}
       />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>

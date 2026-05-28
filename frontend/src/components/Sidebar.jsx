@@ -4,7 +4,7 @@ import { API, COLORS } from '../constants';
 
 function Sidebar({ rooms, currentRoom, onSelectRoom, onCreateRoom,
                    username, onLogout, onSelectUser, currentUser,
-                   onlineUsers }) {
+                   onlineUsers, unreadCounts }) {
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDesc, setNewRoomDesc] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -84,25 +84,35 @@ function Sidebar({ rooms, currentRoom, onSelectRoom, onCreateRoom,
           </div>
         )}
 
-        {rooms.map(room => (
-          <div key={room.id} onClick={() => onSelectRoom(room)}
-            style={{
-              padding: '6px 16px', cursor: 'pointer', borderRadius: '4px',
-              margin: '1px 8px',
-              background: currentRoom?.id === room.id && !currentUser
-                ? 'rgba(88,101,242,0.2)' : 'transparent',
-              color: currentRoom?.id === room.id && !currentUser
-                ? COLORS.text : COLORS.muted,
-              fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px'
-            }}
-          >
-            <span style={{ color: COLORS.muted }}>#</span>
-            <span>{room.name}</span>
-            <span style={{ marginLeft: 'auto', fontSize: '11px', color: COLORS.muted }}>
-              {room.memberCount}
-            </span>
-          </div>
-        ))}
+        {rooms.map(room => {
+          const unread = unreadCounts?.[room.id] || 0;
+          return (
+            <div key={room.id} onClick={() => onSelectRoom(room)}
+              style={{
+                padding: '6px 16px', cursor: 'pointer', borderRadius: '4px',
+                margin: '1px 8px',
+                background: currentRoom?.id === room.id && !currentUser
+                  ? 'rgba(88,101,242,0.2)' : 'transparent',
+                color: currentRoom?.id === room.id && !currentUser
+                  ? COLORS.text : COLORS.muted,
+                fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px'
+              }}
+            >
+              <span style={{ color: COLORS.muted }}>#</span>
+              <span style={{ flex: 1 }}>{room.name}</span>
+              {unread > 0 && (
+                <span style={{
+                  background: COLORS.accent, color: 'white',
+                  borderRadius: '10px', padding: '1px 6px',
+                  fontSize: '11px', fontWeight: '700',
+                  minWidth: '18px', textAlign: 'center'
+                }}>
+                  {unread > 99 ? '99+' : unread}
+                </span>
+              )}
+            </div>
+          );
+        })}
 
         {/* Direct Messages section */}
         <div style={{
