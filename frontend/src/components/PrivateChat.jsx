@@ -11,6 +11,9 @@ function PrivateChat({ otherUser, username, token, onClose }) {
   const clientRef = useRef(null);
   const bottomRef = useRef(null);
 
+  const [isTyping, setIsTyping] = useState(false);
+  const typingTimeoutRef = useRef(null);
+
   useEffect(() => {
     // load history
     axios.get(`${API}/messages/private/${otherUser}`, {
@@ -32,6 +35,22 @@ function PrivateChat({ otherUser, username, token, onClose }) {
             setMessages(prev => [...prev, message]);
           }
         });
+        client.subscribe(`/user/queue/private.delete`, msg => {
+          const event = JSON.parse(msg.body);
+          setMessages(prev => prev.map(m =>
+            m.id === event.messageId ? { ...m, deleted: true } : m
+          ));
+        });
+        client.subscribe(`/user/queue/private.typing`, msg => {
+          const event = JSON.parse(msg.body);
+          if (event.username !== otherUser) return;
+
+          setIsTyping(true);
+          clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = setTimeout(() => {
+            setIsTyping(false);
+          }, 2000);
+        });
       },
       onDisconnect: () => setConnected(false),
     });
@@ -39,9 +58,10 @@ function PrivateChat({ otherUser, username, token, onClose }) {
     client.activate();
     clientRef.current = client;
 
-    return () => {
+   return () => {
+      clearTimeout(typingTimeoutRef.current);
       if (clientRef.current) clientRef.current.deactivate();
-    };
+   };
   }, [otherUser]);
 
   useEffect(() => {
@@ -108,14 +128,30 @@ function PrivateChat({ otherUser, username, token, onClose }) {
             <div style={{ fontSize: '14px' }}>Start a conversation with {otherUser}</div>
           </div>
         )}
-        {messages.map((msg, i) => {
-          const isOwn = msg.senderUsername === username;
+      {messages.map((msg, i) => {
+      const isOwn = msg.senderUsername === username;
           return (
             <div key={i} style={{
               display: 'flex', flexDirection: 'column',
               alignItems: isOwn ? 'flex-end' : 'flex-start',
               marginBottom: '6px'
             }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {isOwn && !msg.deleted && (
+                  <button
+                    onClick={() => clientRef.current?.publish({
+                      destination: '/app/private.delete',
+                      body: JSON.stringify({
+                        messageId: msg.id,
+                        otherUsername: otherUser
+                      })
+                    })}
+                    style={{
+                      background: 'none', border: 'none', color: COLORS.muted,
+                      cursor: 'pointer', fontSize: '14px', padding: '2px', opacity: 0.5
+                    }}
+                  >🗑</button>
+                )}
               <div style={{
                 background: isOwn ? COLORS.accent : COLORS.input,
                 color: COLORS.text,
@@ -125,24 +161,28 @@ function PrivateChat({ otherUser, username, token, onClose }) {
                 {msg.deleted
                   ? <em style={{ color: COLORS.muted }}>Message deleted</em>
                   : msg.content}
-              </div>
-              <span style={{
-                color: COLORS.muted, fontSize: '11px',
-                marginTop: '2px', marginLeft: '4px', marginRight: '4px'
-              }}>
-                {formatTime(msg.sentAt)}
-                {isOwn && (
-                  <span style={{ marginLeft: '4px' }}>
-                    {msg.read ? '✓✓' : '✓'}
-                  </span>
-                )}
-              </span>
             </div>
-          );
-        })}
-        <div ref={bottomRef} />
+          </div>
+          <span style={{
+            color: COLORS.muted, fontSize: '11px',
+            marginTop: '2px', marginLeft: '4px', marginRight: '4px'
+          }}>
+            {formatTime(msg.sentAt)}
+            {isOwn && <span style={{ marginLeft: '4px' }}>{msg.read ? '✓✓' : '✓'}</span>}
+          </span>
+        </div>
+      );
+    })}
+      <div ref={bottomRef} />
       </div>
-
+      {isTyping && (
+        <div style={{
+          fontSize: '12px', color: COLORS.muted,
+          fontStyle: 'italic', marginBottom: '6px'
+        }}>
+          {otherUser} is typing...
+        </div>
+      )}
       {/* Input */}
       <div style={{
         padding: '14px 20px', borderTop: `1px solid ${COLORS.border}`,
@@ -151,7 +191,16 @@ function PrivateChat({ otherUser, username, token, onClose }) {
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <input
             value={input}
-            onChange={e => setInput(e.target.value)}
+            // onChange={e => setInput(e.target.value)}
+            onChange={e => {
+              setInput(e.target.value);
+              if (clientRef.current?.connected) {
+                clientRef.current.publish({
+                  destination: '/app/private.typing',
+                  body: JSON.stringify({ receiverUsername: otherUser })
+                });
+              }
+            }}
             onKeyDown={e => e.key === 'Enter' && sendMessage()}
             placeholder={`Message ${otherUser}`}
             style={{

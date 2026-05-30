@@ -25,6 +25,7 @@ import org.springframework.stereotype.Controller;
 
 import java.security.Principal;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 // import java.util.HashMap;
 import java.util.stream.Collectors;
@@ -171,6 +172,45 @@ public class ChatController {
                     "/topic/room." + roomId + ".delete", deleteEvent);
                 
                 log.info("Message {} successfully deleted by {} in room {}", messageId, principal.getName(), roomId);
+            }
+        });
+    }
+
+    @MessageMapping("/private.typing")
+    public void privateTyping(@Payload Map<String, Object> payload,
+                            Principal principal) {
+        if (principal == null) return;
+        String receiverUsername = payload.get("receiverUsername").toString();
+
+        Map<String, Object> typingEvent = new HashMap<>();
+        typingEvent.put("username", principal.getName());
+        typingEvent.put("typing", true);
+
+        messagingTemplate.convertAndSendToUser(
+            receiverUsername, "/queue/private.typing", typingEvent);
+    }
+
+    @MessageMapping("/private.delete")
+    public void deletePrivateMessage(@Payload Map<String, Object> payload,
+                                    Principal principal) {
+        if (principal == null) return;
+        Long messageId = Long.valueOf(payload.get("messageId").toString());
+        String otherUsername = payload.get("otherUsername").toString();
+
+        privateMessageRepository.findById(messageId).ifPresent(msg -> {
+            if (msg.getSenderUsername().equals(principal.getName())) {
+                msg.setDeleted(true);
+                privateMessageRepository.save(msg);
+
+                Map<String, Object> deleteEvent = new HashMap<>();
+                deleteEvent.put("messageId", messageId);
+                deleteEvent.put("deleted", true);
+
+                // notify both participants
+                messagingTemplate.convertAndSendToUser(
+                    otherUsername, "/queue/private.delete", deleteEvent);
+                messagingTemplate.convertAndSendToUser(
+                    principal.getName(), "/queue/private.delete", deleteEvent);
             }
         });
     }
