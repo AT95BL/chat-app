@@ -490,8 +490,8 @@ This means **no HTTP session is needed** — the WebSocket connection is statele
 
 **Andrej Trožić**
 - GitHub: [@AT95BL](https://github.com/AT95BL)
-- LinkedIn: [Andrej Trožić](https://linkedin.com/in/andrej-trožić)
-- Portfolio: [at95-portfolio.com](https://at95-portfolio.com)
+- LinkedIn: [Andrej Trožić](https://https://www.linkedin.com/in/andrej-tro%C5%BEi%C4%87-57957122b/)
+- Portfolio: [at95-portfolio.com](https://andrejtrozic.com)
 
 ---
 
